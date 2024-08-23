@@ -53,6 +53,7 @@ import com.taobao.arthas.core.advisor.SpyInterceptors.SpyTraceExcludeJDKIntercep
 import com.taobao.arthas.core.advisor.SpyInterceptors.SpyTraceInterceptor1;
 import com.taobao.arthas.core.advisor.SpyInterceptors.SpyTraceInterceptor2;
 import com.taobao.arthas.core.advisor.SpyInterceptors.SpyTraceInterceptor3;
+import com.taobao.arthas.core.command.monitor200.AbstractTraceAdviceListener;
 import com.taobao.arthas.core.server.ArthasBootstrap;
 import com.taobao.arthas.core.util.ArthasCheckUtils;
 import com.taobao.arthas.core.util.ClassUtils;
@@ -70,6 +71,8 @@ public class Enhancer implements ClassFileTransformer {
     private static final Logger logger = LoggerFactory.getLogger(Enhancer.class);
 
     private final AdviceListener listener;
+
+    private final boolean isAtLine;
     private final boolean isTracing;
     private final boolean skipJDKTrace;
     private final Matcher classNameMatcher;
@@ -95,12 +98,17 @@ public class Enhancer implements ClassFileTransformer {
      * @param methodNameMatcher 方法名匹配
      * @param affect            影响统计
      */
-    public Enhancer(AdviceListener listener, boolean isTracing, boolean skipJDKTrace, Matcher classNameMatcher,
+    public Enhancer(AdviceListener listener, Matcher classNameMatcher,
             Matcher classNameExcludeMatcher,
             Matcher methodNameMatcher) {
         this.listener = listener;
-        this.isTracing = isTracing;
-        this.skipJDKTrace = skipJDKTrace;
+        this.isTracing =listener instanceof InvokeTraceable;
+        this.isAtLine  = listener instanceof LocalVarTraceable;
+        boolean skipJDKTrace1 = false;
+        if(listener instanceof AbstractTraceAdviceListener) {
+            skipJDKTrace1 = ((AbstractTraceAdviceListener) listener).getCommand().isSkipJDKTrace();
+        }
+        this.skipJDKTrace = skipJDKTrace1;
         this.classNameMatcher = classNameMatcher;
         this.classNameExcludeMatcher = classNameExcludeMatcher;
         this.methodNameMatcher = methodNameMatcher;
@@ -110,7 +118,7 @@ public class Enhancer implements ClassFileTransformer {
 
     @Override
     public byte[] transform(final ClassLoader inClassLoader, String className, Class<?> classBeingRedefined,
-            ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
+                            ProtectionDomain protectionDomain, byte[] classfileBuffer) throws IllegalClassFormatException {
         try {
             // 检查classloader能否加载到 SpyAPI，如果不能，则放弃增强
             try {
@@ -155,7 +163,9 @@ public class Enhancer implements ClassFileTransformer {
                     interceptorProcessors.addAll(defaultInterceptorClassParser.parse(SpyTraceExcludeJDKInterceptor3.class));
                 }
             }
-
+            if(isAtLine){
+                interceptorProcessors.addAll(defaultInterceptorClassParser.parse(SpyInterceptors.SpyLineInterceptor.class));
+            }
             List<MethodNode> matchedMethods = new ArrayList<MethodNode>();
             for (MethodNode methodNode : classNode.methods) {
                 if (!isIgnore(methodNode, methodNameMatcher)) {
@@ -171,7 +181,6 @@ public class Enhancer implements ClassFileTransformer {
                     }
                 }
             }
-
             // 用于检查是否已插入了 spy函数，如果已有则不重复处理
             GroupLocationFilter groupLocationFilter = new GroupLocationFilter();
 
@@ -182,9 +191,11 @@ public class Enhancer implements ClassFileTransformer {
             LocationFilter exceptionFilter = new InvokeContainLocationFilter(Type.getInternalName(SpyAPI.class),
                     "atExceptionExit", LocationType.EXCEPTION_EXIT);
 
+
             groupLocationFilter.addFilter(enterFilter);
             groupLocationFilter.addFilter(existFilter);
             groupLocationFilter.addFilter(exceptionFilter);
+
 
             LocationFilter invokeBeforeFilter = new InvokeCheckLocationFilter(Type.getInternalName(SpyAPI.class),
                     "atBeforeInvoke", LocationType.INVOKE);
@@ -192,10 +203,13 @@ public class Enhancer implements ClassFileTransformer {
                     "atInvokeException", LocationType.INVOKE_COMPLETED);
             LocationFilter invokeExceptionFilter = new InvokeCheckLocationFilter(Type.getInternalName(SpyAPI.class),
                     "atInvokeException", LocationType.INVOKE_EXCEPTION_EXIT);
+            LocationFilter lineFilter = new InvokeCheckLocationFilter(Type.getInternalName(SpyAPI.class),
+                    "atLine", LocationType.LINE);
+
             groupLocationFilter.addFilter(invokeBeforeFilter);
             groupLocationFilter.addFilter(invokeAfterFilter);
             groupLocationFilter.addFilter(invokeExceptionFilter);
-
+            groupLocationFilter.addFilter(lineFilter);
             for (MethodNode methodNode : matchedMethods) {
                 if (AsmUtils.isNative(methodNode)) {
                     logger.info("ignore native method: {}",
@@ -203,7 +217,12 @@ public class Enhancer implements ClassFileTransformer {
                     continue;
                 }
                 // 先查找是否有 atBeforeInvoke 函数，如果有，则说明已经有trace了，则直接不再尝试增强，直接插入 listener
-                if(AsmUtils.containsMethodInsnNode(methodNode, Type.getInternalName(SpyAPI.class), "atBeforeInvoke")) {
+
+                boolean isTraceEnhance  = AsmUtils.containsMethodInsnNode(methodNode, Type.getInternalName(SpyAPI.class), "atBeforeInvoke");
+                boolean isAtLineEnhance = AsmUtils.containsMethodInsnNode(methodNode, Type.getInternalName(SpyAPI.class), "atLine");
+
+                //曾经是trace 增强 现在还要trace增强
+                if(isTraceEnhance&&isTracing) {
                     for (AbstractInsnNode insnNode = methodNode.instructions.getFirst(); insnNode != null; insnNode = insnNode
                             .getNext()) {
                         if (insnNode instanceof MethodInsnNode) {
@@ -221,7 +240,11 @@ public class Enhancer implements ClassFileTransformer {
                                     methodInsnNode.owner, methodInsnNode.name, methodInsnNode.desc, listener);
                         }
                     }
-                }else {
+                    //曾经是line增强 现在还要line增强 则不用考虑
+                }else if(isAtLineEnhance&&isAtLine){
+                    logger.info("no need enhance AtLine className:{}",className);
+                    //曾经是line增强 现在trace增强
+                }else{
                     MethodProcessor methodProcessor = new MethodProcessor(classNode, methodNode, groupLocationFilter);
                     for (InterceptorProcessor interceptor : interceptorProcessors) {
                         try {
@@ -240,6 +263,8 @@ public class Enhancer implements ClassFileTransformer {
                             logger.error("enhancer error, class: {}, method: {}, interceptor: {}", classNode.name, methodNode.name, interceptor.getClass().getName(), e);
                         }
                     }
+
+
                 }
 
                 // enter/exist 总是要插入 listener
@@ -272,6 +297,7 @@ public class Enhancer implements ClassFileTransformer {
 
         return null;
     }
+
 
     /**
      * 是否抽象属性

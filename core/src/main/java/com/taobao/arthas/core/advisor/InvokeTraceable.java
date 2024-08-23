@@ -5,7 +5,7 @@ package com.taobao.arthas.core.advisor;
  * 当一个方法内部调用另外一个方法时，会触发此跟踪方法
  * Created by vlinux on 15/5/27.
  */
-public interface InvokeTraceable {
+public interface InvokeTraceable extends MethodInnerTraceable{
 
     /**
      * 调用之前跟踪

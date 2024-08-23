@@ -3,6 +3,9 @@ package com.taobao.arthas.core.advisor;
 import java.arthas.SpyAPI;
 import java.lang.instrument.Instrumentation;
 
+import com.taobao.arthas.core.command.monitor200.TraceCommand;
+import com.taobao.arthas.core.command.monitor200.AbstractTraceAdviceListener;
+import com.taobao.arthas.core.shell.command.CommandProcess;
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -39,7 +42,25 @@ public class EnhancerTest {
         EqualsMatcher<String> methodNameMatcher = new EqualsMatcher<String>("print");
         EqualsMatcher<String> classNameMatcher = new EqualsMatcher<String>(MathGame.class.getName());
 
-        Enhancer enhancer = new Enhancer(listener, true, false, classNameMatcher, null, methodNameMatcher);
+
+        TraceCommand traceCommand = Mockito.mock(TraceCommand.class);
+        CommandProcess commandProcess =Mockito.mock(CommandProcess.class);
+        listener = Mockito.mock(AbstractTraceAdviceListener.class,
+                Mockito.withSettings()
+                        .verboseLogging()
+                        .useConstructor(traceCommand,commandProcess)
+                        .extraInterfaces(InvokeTraceable.class, AdviceListener.class)
+
+        );
+        listener = Mockito.mock(AdviceListenerAdapter.class,Mockito.withSettings().extraInterfaces(LocalVarTraceable.class));
+
+        if(listener instanceof AbstractTraceAdviceListener) {
+            AbstractTraceAdviceListener listener1 = (AbstractTraceAdviceListener) listener;
+            Mockito.when(listener1.getCommand()).thenReturn(traceCommand);
+        }
+
+
+        Enhancer enhancer = new Enhancer(listener,  classNameMatcher, null, methodNameMatcher);
 
         ClassLoader inClassLoader = MathGame.class.getClassLoader();
         String className = MathGame.class.getName();

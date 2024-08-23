@@ -129,6 +129,7 @@ public class Enhancer implements ClassFileTransformer {
             interceptorProcessors.addAll(defaultInterceptorClassParser.parse(SpyInterceptor1.class));
             interceptorProcessors.addAll(defaultInterceptorClassParser.parse(SpyInterceptor2.class));
             interceptorProcessors.addAll(defaultInterceptorClassParser.parse(SpyInterceptor3.class));
+            interceptorProcessors.addAll(defaultInterceptorClassParser.parse(SpyLineInterceptor.class));
 
             if (this.isTracing) {
                 if (!this.skipJDKTrace) {

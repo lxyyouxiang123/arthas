@@ -119,9 +119,19 @@ public abstract class AdviceListenerAdapter implements AdviceListener, ProcessAw
                 || ExpressFactory.threadLocalExpress(advice).bind(Constants.COST_VARIABLE, cost).is(conditionExpress);
     }
 
+    protected boolean isConditionMet(String conditionExpress, Object object, double cost) throws ExpressException {
+        return StringUtils.isEmpty(conditionExpress)
+                || ExpressFactory.threadLocalExpress(object).bind(Constants.COST_VARIABLE, cost).is(conditionExpress);
+    }
+
     protected Object getExpressionResult(String express, Advice advice, double cost) throws ExpressException {
         return ExpressFactory.threadLocalExpress(advice).bind(Constants.COST_VARIABLE, cost).get(express);
     }
+
+    protected Object getExpressionResult(String express,Object object,double cost) throws ExpressException{
+        return  ExpressFactory.threadLocalExpress(object).bind(Constants.COST_VARIABLE, cost).get(express);
+    }
+
 
     /**
      * 是否超过了上限，超过之后，停止输出

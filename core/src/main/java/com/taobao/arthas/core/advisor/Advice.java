@@ -15,7 +15,7 @@ public class Advice {
     private final boolean isBefore;
     private final boolean isThrow;
     private final boolean isReturn;
-
+    private final boolean isLine;
     public boolean isBefore() {
         return isBefore;
     }
@@ -26,6 +26,10 @@ public class Advice {
 
     public boolean isAfterThrowing() {
         return isThrow;
+    }
+
+    public boolean isLine(){
+        return isLine;
     }
 
     public ClassLoader getLoader() {
@@ -87,6 +91,7 @@ public class Advice {
         isBefore = (access & AccessPoint.ACCESS_BEFORE.getValue()) == AccessPoint.ACCESS_BEFORE.getValue();
         isThrow = (access & AccessPoint.ACCESS_AFTER_THROWING.getValue()) == AccessPoint.ACCESS_AFTER_THROWING.getValue();
         isReturn = (access & AccessPoint.ACCESS_AFTER_RETUNING.getValue()) == AccessPoint.ACCESS_AFTER_RETUNING.getValue();
+        isLine = (access & AccessPoint.ACCESS_LINE.getValue()) == AccessPoint.ACCESS_LINE.getValue();
     }
 
     public static Advice newForBefore(ClassLoader loader,
@@ -141,6 +146,22 @@ public class Advice {
                 AccessPoint.ACCESS_AFTER_THROWING.getValue()
         );
 
+    }
+
+    public static Advice newForLine(ClassLoader loader,
+                                    Class<?> clazz,
+                                    ArthasMethod method,
+                                    Object target) {
+        return new Advice(
+                loader,
+                clazz,
+                method,
+                target,
+                null,
+                null, //returnObj
+                null, //throwExp
+                AccessPoint.ACCESS_LINE.getValue()
+        );
     }
 
 }
